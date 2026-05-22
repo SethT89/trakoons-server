@@ -8,6 +8,7 @@ const {
   MIN_PLAYERS_TO_START,
   generateRoomCode,
   makeRoom,
+  makeBot,
   getPlayers,
   nextHost,
 } = require('./rooms');
@@ -79,7 +80,7 @@ function handleCreateRoom(ws, msg) {
 
 function handleJoinRoom(ws, msg) {
   const name = String(msg.name || '').trim().slice(0, 20);
-  const code = String(msg.roomCode || '').toUpperCase().trim();
+  const code = String(msg.code || '').toUpperCase().trim();
   if (!name) { send(ws, { type: 'error', message: 'Name required' }); return; }
 
   const room = rooms.get(code);
@@ -146,6 +147,29 @@ function handleKickPlayer(ws, msg) {
   clientToPlayer.delete(kicked.ws);
 
   broadcastToRoom(room, { type: 'playerKicked', kickedPlayerId: kickId, players: getPlayers(room) });
+}
+
+function handleAddBot(ws) {
+  const { playerId, room } = getRoomAndPlayer(ws);
+  if (!room || room.state !== 'waiting' || room.hostId !== playerId) return;
+  if (room.players.size >= MAX_PLAYERS) {
+    send(ws, { type: 'error', message: 'Room is full' });
+    return;
+  }
+  const bot = makeBot(room);
+  room.players.set(bot.id, bot);
+  room.joinOrder.push(bot.id);
+  broadcastToRoom(room, { type: 'playerJoined', players: getPlayers(room) });
+}
+
+function handleRemoveBot(ws, msg) {
+  const { playerId, room } = getRoomAndPlayer(ws);
+  if (!room || room.state !== 'waiting' || room.hostId !== playerId) return;
+  const bot = room.players.get(msg.botId);
+  if (!bot || !bot.isBot) return;
+  room.players.delete(bot.id);
+  room.joinOrder = room.joinOrder.filter(id => id !== bot.id);
+  broadcastToRoom(room, { type: 'playerLeft', players: getPlayers(room) });
 }
 
 function handleStartGame(ws) {
@@ -228,6 +252,8 @@ wss.on('connection', ws => {
       case 'setMode':     handleSetMode(ws, msg);    break;
       case 'setTeam':     handleSetTeam(ws, msg);    break;
       case 'kickPlayer':  handleKickPlayer(ws, msg); break;
+      case 'addBot':      handleAddBot(ws);          break;
+      case 'removeBot':   handleRemoveBot(ws, msg);  break;
       case 'startGame':   handleStartGame(ws);       break;
     }
   });

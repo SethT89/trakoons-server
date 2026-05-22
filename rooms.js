@@ -3,7 +3,7 @@
 // 24-letter pool — no I or O to avoid confusion with 1 and 0
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const MAX_PLAYERS = 10;
-const MIN_PLAYERS_TO_START = 5;
+const MIN_PLAYERS_TO_START = 2;
 
 const PLAYER_COLORS = [
   '#FF6B35', '#E63946', '#2EC4B6', '#FF9F1C',
@@ -13,6 +13,11 @@ const PLAYER_COLORS = [
 
 // Team colors: team 0 = orange, team 1 = sky blue
 const TEAM_COLORS = { 0: '#FF6B35', 1: '#4CC9F0' };
+
+const BOT_NAMES = [
+  'Bandit', 'Rascal', 'Dumpster', 'Patches', 'Sneaky',
+  'Trashy', 'Nibbles', 'Chaos', 'Greasy', 'Mayhem',
+];
 
 function generateRoomCode() {
   let code = '';
@@ -39,8 +44,16 @@ function makeRoom(code, hostId, hostName) {
   };
 }
 
+function makeBot(room) {
+  const usedNames = new Set(Array.from(room.players.values()).map(p => p.name));
+  const name = BOT_NAMES.find(n => !usedNames.has(n)) ?? `Bot${room.players.size + 1}`;
+  const color = PLAYER_COLORS[room.players.size % PLAYER_COLORS.length];
+  const id = 'bot-' + Math.random().toString(36).slice(2, 8);
+  return { id, name, color, teamId: null, ws: null, isBot: true };
+}
+
 function serializePlayer(p) {
-  return { id: p.id, name: p.name, color: p.color, teamId: p.teamId };
+  return { id: p.id, name: p.name, color: p.color, teamId: p.teamId, isBot: p.isBot ?? false };
 }
 
 function getPlayers(room) {
@@ -60,8 +73,10 @@ module.exports = {
   MIN_PLAYERS_TO_START,
   PLAYER_COLORS,
   TEAM_COLORS,
+  BOT_NAMES,
   generateRoomCode,
   makeRoom,
+  makeBot,
   serializePlayer,
   getPlayers,
   nextHost,
