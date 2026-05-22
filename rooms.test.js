@@ -62,3 +62,59 @@ test('nextHost returns null when only one player', () => {
   const room = makeRoom('ABCD', hostId, 'Alice');
   assert.equal(nextHost(room, hostId), null);
 });
+
+const { generateAssets } = require('./rooms');
+
+test('generateAssets: returns 6 assets for 2 players', () => {
+  const assets = generateAssets(2);
+  assert.equal(assets.length, 6);
+});
+
+test('generateAssets: returns 12 assets for 4 players', () => {
+  const assets = generateAssets(4);
+  assert.equal(assets.length, 12);
+});
+
+test('generateAssets: caps at 18 for 10 players', () => {
+  const assets = generateAssets(10);
+  assert.equal(assets.length, 18);
+});
+
+test('generateAssets: all assets have required fields', () => {
+  const assets = generateAssets(2);
+  for (const a of assets) {
+    assert.ok(a.id, 'has id');
+    assert.ok(a.type, 'has type');
+    assert.equal(typeof a.x, 'number');
+    assert.equal(typeof a.y, 'number');
+    assert.ok(a.w > 0);
+    assert.ok(a.h > 0);
+    assert.equal(a.ownerId, null);
+    assert.equal(a.ownerColor, null);
+    assert.equal(a.cooldownUntil, 0);
+    assert.equal(typeof a.moving, 'boolean');
+    assert.equal(typeof a.vx, 'number');
+    assert.equal(typeof a.vy, 'number');
+  }
+});
+
+test('generateAssets: no assets overlap each other', () => {
+  const assets = generateAssets(6);
+  for (let i = 0; i < assets.length; i++) {
+    for (let j = i + 1; j < assets.length; j++) {
+      const a = assets[i], b = assets[j];
+      const overlap = !(a.x + a.w <= b.x || b.x + b.w <= a.x ||
+                        a.y + a.h <= b.y || b.y + b.h <= a.y);
+      assert.ok(!overlap, `assets ${i} and ${j} must not overlap`);
+    }
+  }
+});
+
+test('generateAssets: moving assets have non-zero velocity', () => {
+  const assets = generateAssets(6);
+  const moving = assets.filter(a => a.moving);
+  assert.ok(moving.length > 0, 'has at least one moving asset');
+  for (const a of moving) {
+    assert.ok(Math.abs(a.vx) > 0 || Math.abs(a.vy) > 0, 'moving asset has velocity');
+  }
+});
