@@ -1,5 +1,4 @@
 'use strict';
-const { generateAssets } = require('./rooms');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const RACCOON_SPEED      = 2.5;   // units per 100ms tick (25 units/sec)
