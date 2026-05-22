@@ -12,6 +12,7 @@ const {
   getPlayers,
   nextHost,
 } = require('./rooms');
+const { startGameLoop, stopGameLoop } = require('./gameLoop');
 
 const PORT = process.env.PORT || 8080;
 const COUNTDOWN_SECONDS = 3;
@@ -182,6 +183,15 @@ function handleRemoveBot(ws, msg) {
   broadcastToRoom(room, { type: 'playerLeft', players: getPlayers(room) });
 }
 
+function handleMove(ws, msg) {
+  const { room, player } = getRoomAndPlayer(ws);
+  if (!room || room.state !== 'playing' || !player || player.isBot) return;
+  const x = Number(msg.x), y = Number(msg.y);
+  if (!isFinite(x) || !isFinite(y)) return;
+  player.pendingX = x;
+  player.pendingY = y;
+}
+
 function handleStartGame(ws) {
   const { playerId, room } = getRoomAndPlayer(ws);
   if (!room || room.state !== 'waiting' || room.hostId !== playerId) return;
@@ -204,10 +214,9 @@ function startCountdown(roomCode) {
       broadcastToRoom(room, { type: 'countdown', count });
     } else {
       clearInterval(iv);
-      // Full game loop implemented in Phase 2.
-      // For now, send gameStarted so the frontend can show the placeholder screen.
       room.state = 'playing';
       broadcastToRoom(room, { type: 'gameStarted', players: getPlayers(room), mode: room.mode });
+      startGameLoop(room);
     }
   }, 1000);
 }
@@ -225,6 +234,7 @@ function handleDisconnect(ws) {
   room.joinOrder = room.joinOrder.filter(id => id !== playerId);
 
   if (room.players.size === 0) {
+    stopGameLoop(room);
     rooms.delete(roomCode);
     return;
   }
@@ -238,8 +248,11 @@ function handleDisconnect(ws) {
     broadcastToRoom(room, { type: 'playerLeft', players: getPlayers(room) });
     scheduleIdleCleanup(room);
   } else {
-    // Mid-game disconnect: notify other players, assets stay tagged (Phase 2 handles asset state)
     broadcastToRoom(room, { type: 'playerLeft', players: getPlayers(room) });
+    if (room.players.size === 0) {
+      stopGameLoop(room);
+      rooms.delete(roomCode);
+    }
   }
 }
 
@@ -266,6 +279,7 @@ wss.on('connection', ws => {
       case 'removeBot':    handleRemoveBot(ws, msg);     break;
       case 'setBotTeam':   handleSetBotTeam(ws, msg);    break;
       case 'startGame':   handleStartGame(ws);       break;
+      case 'move':        handleMove(ws, msg);        break;
     }
   });
   ws.on('close', () => handleDisconnect(ws));
