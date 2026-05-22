@@ -149,6 +149,16 @@ function handleKickPlayer(ws, msg) {
   broadcastToRoom(room, { type: 'playerKicked', kickedPlayerId: kickId, players: getPlayers(room) });
 }
 
+function handleSetBotTeam(ws, msg) {
+  const { playerId, room } = getRoomAndPlayer(ws);
+  if (!room || room.state !== 'waiting' || room.hostId !== playerId) return;
+  const bot = room.players.get(msg.botId);
+  if (!bot || !bot.isBot) return;
+  if (msg.teamId !== 0 && msg.teamId !== 1) return;
+  bot.teamId = msg.teamId;
+  broadcastToRoom(room, { type: 'teamChanged', players: getPlayers(room) });
+}
+
 function handleAddBot(ws) {
   const { playerId, room } = getRoomAndPlayer(ws);
   if (!room || room.state !== 'waiting' || room.hostId !== playerId) return;
@@ -252,8 +262,9 @@ wss.on('connection', ws => {
       case 'setMode':     handleSetMode(ws, msg);    break;
       case 'setTeam':     handleSetTeam(ws, msg);    break;
       case 'kickPlayer':  handleKickPlayer(ws, msg); break;
-      case 'addBot':      handleAddBot(ws);          break;
-      case 'removeBot':   handleRemoveBot(ws, msg);  break;
+      case 'addBot':       handleAddBot(ws);              break;
+      case 'removeBot':    handleRemoveBot(ws, msg);     break;
+      case 'setBotTeam':   handleSetBotTeam(ws, msg);    break;
       case 'startGame':   handleStartGame(ws);       break;
     }
   });
