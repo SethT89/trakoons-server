@@ -85,11 +85,20 @@ function nextHost(room, leavingId) {
   return room.joinOrder.find(id => id !== leavingId && room.players.has(id)) || null;
 }
 
+// Fixed trough obstacle — always present, non-taggable, blocks movement
+const TROUGH = {
+  id: 'trough',
+  type: 'trough',
+  x: 46, y: 47, w: 8, h: 3,
+  ownerId: null, ownerColor: null, cooldownUntil: 0,
+  moving: false, vx: 0, vy: 0,
+};
+
 function generateAssets(playerCount) {
   const count      = Math.min(Math.max(playerCount * 3, 6), 18);
   const movingCount = Math.max(1, Math.floor(count * 0.25));
   const staticCount = count - movingCount;
-  const placed = [];
+  const placed = [TROUGH]; // trough placed first so nothing spawns on it
 
   function noOverlap(candidate) {
     for (const a of placed) {

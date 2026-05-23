@@ -192,6 +192,13 @@ function handleMove(ws, msg) {
   player.pendingY = y;
 }
 
+function handleBackToLobby(ws) {
+  const { room } = getRoomAndPlayer(ws);
+  if (!room) return;
+  stopGameLoop(room);
+  room.state = 'waiting';
+}
+
 function handleStartGame(ws) {
   const { playerId, room } = getRoomAndPlayer(ws);
   if (!room || room.state !== 'waiting' || room.hostId !== playerId) return;
@@ -279,6 +286,7 @@ wss.on('connection', ws => {
       case 'removeBot':    handleRemoveBot(ws, msg);     break;
       case 'setBotTeam':   handleSetBotTeam(ws, msg);    break;
       case 'startGame':   handleStartGame(ws);       break;
+      case 'backToLobby': handleBackToLobby(ws);     break;
       case 'move':        handleMove(ws, msg);        break;
     }
   });

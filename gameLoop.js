@@ -1,11 +1,11 @@
 'use strict';
 
-const { generateAssets } = require('./rooms');
+const { generateAssets, TEAM_COLORS } = require('./rooms');
 const WebSocket = require('ws');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const RACCOON_SPEED      = 2.5;   // units per 100ms tick (25 units/sec)
-const VEHICLE_SPEED      = 1.675; // 67% of raccoon speed
+const RACCOON_SPEED      = 1.8;   // units per 100ms tick (18 units/sec) — bots
+const VEHICLE_SPEED      = 1.2;   // 67% of raccoon speed
 const RACCOON_SIZE       = 2;     // width and height in coordinate units
 const MAX_TICK_MOVE      = 5;     // max units a player may move between ticks (validation)
 const TAG_COOLDOWN_MS    = 3000;
@@ -31,11 +31,12 @@ function overlaps(a, b) {
  * @param {boolean} frenzy — true when timeLeft <= FRENZY_THRESHOLD
  */
 function tryTag(asset, player, frenzy) {
+  if (asset.type === 'trough') return;     // non-taggable obstacle
   const now = Date.now();
   if (now < asset.cooldownUntil) return;   // on cooldown
   if (asset.ownerId === player.id) return; // already owns it
   asset.ownerId      = player.id;
-  asset.ownerColor   = player.color;
+  asset.ownerColor   = player.displayColor ?? player.color;
   asset.cooldownUntil = now + (frenzy ? FRENZY_COOLDOWN_MS : TAG_COOLDOWN_MS);
 }
 
@@ -83,15 +84,29 @@ function buildGameOverPayload(room) {
 
 // ─── Stateful game loop ───────────────────────────────────────────────────────
 
+function findClearSpawn(assets) {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const x = 10 + Math.random() * 80;
+    const y = 10 + Math.random() * 80;
+    const box = { x, y, w: RACCOON_SIZE, h: RACCOON_SIZE };
+    if (!assets.some(a => !a.moving && overlaps(box, a))) return { x, y };
+  }
+  return { x: 10 + Math.random() * 80, y: 10 + Math.random() * 80 };
+}
+
 function initGameState(room) {
   room.assets   = generateAssets(room.players.size);
   room.timeLeft = ROUND_DURATION;
   room.frenzy   = false;
   for (const player of room.players.values()) {
-    player.x = 10 + Math.random() * 80;
-    player.y = 10 + Math.random() * 80;
+    const spawn = findClearSpawn(room.assets);
+    player.x = spawn.x;
+    player.y = spawn.y;
     player.pendingX = player.x;
     player.pendingY = player.y;
+    player.displayColor = (room.mode === 'teams' && (player.teamId === 0 || player.teamId === 1))
+      ? TEAM_COLORS[player.teamId]
+      : player.color;
     if (player.isBot) {
       const angle = Math.random() * Math.PI * 2;
       player.botDx = Math.cos(angle);
@@ -109,18 +124,31 @@ function applyPlayerMoves(room) {
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist > MAX_TICK_MOVE) continue; // reject — too far (cheat or extreme lag)
 
-    const nx = Math.max(0, Math.min(100 - RACCOON_SIZE, player.pendingX));
-    const ny = Math.max(0, Math.min(100 - RACCOON_SIZE, player.pendingY));
-    const box = { x: nx, y: ny, w: RACCOON_SIZE, h: RACCOON_SIZE };
+    const desiredX = Math.max(0, Math.min(100 - RACCOON_SIZE, player.pendingX));
+    const desiredY = Math.max(0, Math.min(100 - RACCOON_SIZE, player.pendingY));
 
-    let blocked = false;
+    // Axis-separated collision — slide along asset edges instead of freezing.
+    // Try X first with current Y, then Y with the resolved X. Tag still fires
+    // on every attempted overlap.
+    const tryXBox = { x: desiredX, y: player.y, w: RACCOON_SIZE, h: RACCOON_SIZE };
+    let blockedX = false;
     for (const asset of room.assets) {
-      if (!asset.moving && overlaps(box, asset)) {
+      if (!asset.moving && overlaps(tryXBox, asset)) {
         tryTag(asset, player, room.frenzy);
-        blocked = true;
+        blockedX = true;
       }
     }
-    if (!blocked) { player.x = nx; player.y = ny; }
+    if (!blockedX) player.x = desiredX;
+
+    const tryYBox = { x: player.x, y: desiredY, w: RACCOON_SIZE, h: RACCOON_SIZE };
+    let blockedY = false;
+    for (const asset of room.assets) {
+      if (!asset.moving && overlaps(tryYBox, asset)) {
+        tryTag(asset, player, room.frenzy);
+        blockedY = true;
+      }
+    }
+    if (!blockedY) player.y = desiredY;
   }
 }
 
@@ -179,6 +207,8 @@ function moveBots(room) {
 function moveVehicles(room) {
   for (const asset of room.assets) {
     if (!asset.moving) continue;
+    const prevX = asset.x;
+    const prevY = asset.y;
     asset.x += asset.vx;
     asset.y += asset.vy;
 
@@ -190,6 +220,19 @@ function moveVehicles(room) {
     if (asset.y <= 0 || asset.y + asset.h >= 100) {
       asset.vy *= -1;
       asset.y   = Math.max(0, Math.min(100 - asset.h, asset.y));
+    }
+
+    // Bounce off static obstacles (e.g. trough)
+    const box = { x: asset.x, y: asset.y, w: asset.w, h: asset.h };
+    for (const obstacle of room.assets) {
+      if (obstacle.moving || obstacle === asset) continue;
+      if (overlaps(box, obstacle)) {
+        asset.vx *= -1;
+        asset.vy *= -1;
+        asset.x = prevX;
+        asset.y = prevY;
+        break;
+      }
     }
 
     // Check if any raccoon overlaps this vehicle (bounding box only — no block)
