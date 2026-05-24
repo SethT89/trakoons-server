@@ -138,11 +138,13 @@ describe('tickTrainState', () => {
   test('departing phase moves all train assets left each tick', () => {
     const { assets, trainState } = makeMockTrain();
     trainState.phase = 'departing';
-    const engineXBefore = assets[0].x;
+    const xBefore = assets.map(a => a.x);
     tickTrainState(assets, trainState);
-    assert.ok(assets[0].x < engineXBefore, 'engine must move left');
-    const delta = engineXBefore - assets[0].x;
-    assert.ok(delta > 0);
+    const delta = xBefore[0] - assets[0].x;
+    assert.ok(delta > 0, 'engine must move left');
+    for (let i = 1; i < assets.length; i++) {
+      assert.equal(xBefore[i] - assets[i].x, delta, `asset ${i} must move by same delta as engine`);
+    }
   });
 
   test('departing transitions to offscreen when car-4 right edge clears left boundary', () => {
