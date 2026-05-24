@@ -13,6 +13,11 @@ const FRENZY_COOLDOWN_MS = 1000;
 const FRENZY_THRESHOLD   = 10;   // seconds remaining when frenzy starts
 const ROUND_DURATION     = 30;   // seconds
 const TICK_MS            = 100;
+const TRAIN_SPEED      = 1.8;   // units per tick — same as raccoon speed
+const DOCKED_TICKS     = 50;    // 5 seconds at 100ms/tick
+const OFFSCREEN_TICKS  = 50;    // 5 seconds off-screen
+const OFFSCREEN_OFFSET = -60;   // how far left of dockedX to park (units)
+const TRAIN_IDS = ['train-engine', 'train-car-1', 'train-car-2', 'train-car-3', 'train-car-4'];
 const BOT_DIR_TICKS      = 20;   // ticks between random direction changes (wander fallback)
 
 // ─── Pure logic ───────────────────────────────────────────────────────────────
@@ -79,6 +84,56 @@ function buildGameOverPayload(room) {
     winner:      scores[0]?.id ?? '',
     winnerLabel: scores[0]?.name ?? '',
   };
+}
+
+/** Returns the 5 train assets in fixed order, or fewer if some are missing. */
+function getTrainAssets(assets) {
+  const byId = new Map(assets.map(a => [a.id, a]));
+  return TRAIN_IDS.map(id => byId.get(id)).filter(Boolean);
+}
+
+/**
+ * Advance the train cycle by one tick. Mutates train asset x-positions and trainState.
+ * @param {object[]} assets   — room.assets array
+ * @param {object}   trainState — { phase, ticksLeft, dockedX }
+ */
+function tickTrainState(assets, trainState) {
+  const trains = getTrainAssets(assets);
+  if (trains.length < 5) return;
+
+  if (trainState.phase === 'docked') {
+    if (--trainState.ticksLeft <= 0) {
+      trainState.phase = 'departing';
+    }
+
+  } else if (trainState.phase === 'departing') {
+    for (const a of trains) a.x -= TRAIN_SPEED;
+    const car4 = trains[4]; // train-car-4 is rightmost
+    if (car4.x + car4.w < 0) {
+      // Fully off-screen — park all assets and start offscreen timer
+      for (let i = 0; i < trains.length; i++) {
+        trains[i].x = trainState.dockedX[i] + OFFSCREEN_OFFSET;
+      }
+      trainState.phase    = 'offscreen';
+      trainState.ticksLeft = OFFSCREEN_TICKS;
+    }
+
+  } else if (trainState.phase === 'offscreen') {
+    if (--trainState.ticksLeft <= 0) {
+      trainState.phase = 'arriving';
+    }
+
+  } else if (trainState.phase === 'arriving') {
+    for (const a of trains) a.x += TRAIN_SPEED;
+    if (trains[0].x >= trainState.dockedX[0]) {
+      // Snap to docked positions and restart timer
+      for (let i = 0; i < trains.length; i++) {
+        trains[i].x = trainState.dockedX[i];
+      }
+      trainState.phase    = 'docked';
+      trainState.ticksLeft = DOCKED_TICKS;
+    }
+  }
 }
 
 // ─── Stateful game loop ───────────────────────────────────────────────────────
@@ -257,38 +312,116 @@ function moveBots(room) {
   }
 }
 
+/** True if (nx,ny) overlaps a STATIC asset (moving vehicles are ignored to prevent deadlock). */
+function blockedByStatic(asset, nx, ny, room) {
+  const box = { x: nx, y: ny, w: asset.w, h: asset.h };
+  for (const other of room.assets) {
+    if (other === asset || other.moving) continue;
+    if (overlaps(box, other)) return true;
+  }
+  return false;
+}
+
+/** True if (nx,ny) overlaps another MOVING vehicle. */
+function blockedByMover(asset, nx, ny, room) {
+  const box = { x: nx, y: ny, w: asset.w, h: asset.h };
+  for (const other of room.assets) {
+    if (other === asset || !other.moving) continue;
+    if (overlaps(box, other)) return true;
+  }
+  return false;
+}
+
 function moveVehicles(room) {
   for (const asset of room.assets) {
     if (!asset.moving) continue;
-    const prevX = asset.x;
-    const prevY = asset.y;
-    asset.x += asset.vx;
-    asset.y += asset.vy;
 
-    // Bounce off map edges
-    if (asset.x <= 0 || asset.x + asset.w >= 100) {
-      asset.vx *= -1;
-      asset.x   = Math.max(0, Math.min(100 - asset.w, asset.x));
-    }
-    if (asset.y <= 0 || asset.y + asset.h >= 100) {
-      asset.vy *= -1;
-      asset.y   = Math.max(0, Math.min(100 - asset.h, asset.y));
-    }
-
-    // Bounce off static obstacles (e.g. trough)
-    const box = { x: asset.x, y: asset.y, w: asset.w, h: asset.h };
-    for (const obstacle of room.assets) {
-      if (obstacle.moving || obstacle === asset) continue;
-      if (overlaps(box, obstacle)) {
+    if (!asset.route || asset.route.length < 2) {
+      // Legacy bounce fallback
+      asset.x += asset.vx;
+      asset.y += asset.vy;
+      if (asset.x <= 0 || asset.x + asset.w >= 100) {
         asset.vx *= -1;
+        asset.x = Math.max(0, Math.min(100 - asset.w, asset.x));
+      }
+      if (asset.y <= 0 || asset.y + asset.h >= 100) {
         asset.vy *= -1;
-        asset.x = prevX;
-        asset.y = prevY;
-        break;
+        asset.y = Math.max(0, Math.min(100 - asset.h, asset.y));
+      }
+    } else {
+      const target = asset.route[asset.routeIdx];
+      const dx = target.x - asset.x;
+      const dy = target.y - asset.y;
+
+      if (Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05) {
+        // Reached waypoint — snap and advance
+        asset.x = target.x;
+        asset.y = target.y;
+        asset.routeIdx = (asset.routeIdx + 1) % asset.route.length;
+      } else {
+        // Primary step: dominant axis toward waypoint (cardinal only)
+        let mx = 0, my = 0;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          mx = Math.sign(dx) * Math.min(VEHICLE_SPEED, Math.abs(dx));
+        } else {
+          my = Math.sign(dy) * Math.min(VEHICLE_SPEED, Math.abs(dy));
+        }
+
+        const staticAhead = blockedByStatic(asset, asset.x + mx, asset.y + my, room);
+        const moverAhead  = !staticAhead && blockedByMover(asset, asset.x + mx, asset.y + my, room);
+
+        if (!staticAhead && !moverAhead) {
+          // Path clear — move normally
+          asset.x += mx;
+          asset.y += my;
+          asset.vx = mx !== 0 ? Math.sign(mx) * VEHICLE_SPEED : 0;
+          asset.vy = my !== 0 ? Math.sign(my) * VEHICLE_SPEED : 0;
+          asset.yieldTicks = 0;
+          asset.stuckTicks = 0;
+        } else if (moverAhead) {
+          // Another vehicle ahead — yield briefly then push through
+          asset.yieldTicks = (asset.yieldTicks || 0) + 1;
+          if (asset.yieldTicks > 3) {
+            asset.x += mx;
+            asset.y += my;
+            asset.vx = mx !== 0 ? Math.sign(mx) * VEHICLE_SPEED : 0;
+            asset.vy = my !== 0 ? Math.sign(my) * VEHICLE_SPEED : 0;
+            asset.yieldTicks = 0;
+          }
+        } else {
+          // Static obstacle — try perpendicular detour
+          const pa = mx !== 0 ? { x: 0, y:  VEHICLE_SPEED } : { x:  VEHICLE_SPEED, y: 0 };
+          const pb = mx !== 0 ? { x: 0, y: -VEHICLE_SPEED } : { x: -VEHICLE_SPEED, y: 0 };
+          const da = Math.hypot(target.x - (asset.x + pa.x), target.y - (asset.y + pa.y));
+          const db = Math.hypot(target.x - (asset.x + pb.x), target.y - (asset.y + pb.y));
+          let detoured = false;
+          for (const p of da <= db ? [pa, pb] : [pb, pa]) {
+            if (!blockedByStatic(asset, asset.x + p.x, asset.y + p.y, room)) {
+              asset.x += p.x;
+              asset.y += p.y;
+              asset.vx = p.x !== 0 ? Math.sign(p.x) * VEHICLE_SPEED : 0;
+              asset.vy = p.y !== 0 ? Math.sign(p.y) * VEHICLE_SPEED : 0;
+              asset.stuckTicks = 0;
+              detoured = true;
+              break;
+            }
+          }
+          if (!detoured) {
+            // All directions blocked — count ticks and skip waypoint as last resort
+            asset.stuckTicks = (asset.stuckTicks || 0) + 1;
+            if (asset.stuckTicks > 10) {
+              asset.routeIdx = (asset.routeIdx + 1) % asset.route.length;
+              asset.stuckTicks = 0;
+            }
+          }
+        }
+
+        asset.x = Math.max(0, Math.min(100 - asset.w, asset.x));
+        asset.y = Math.max(0, Math.min(100 - asset.h, asset.y));
       }
     }
 
-    // Check if any raccoon overlaps this vehicle (bounding box only — no block)
+    // Tag any overlapping raccoon
     for (const player of room.players.values()) {
       const raccoonBox = { x: player.x, y: player.y, w: RACCOON_SIZE, h: RACCOON_SIZE };
       if (overlaps(raccoonBox, asset)) tryTag(asset, player, room.frenzy);
@@ -350,5 +483,7 @@ function stopGameLoop(room) {
 module.exports = {
   overlaps, tryTag, buildGameOverPayload,
   startGameLoop, stopGameLoop,
+  tickTrainState, getTrainAssets,
   RACCOON_SIZE, RACCOON_SPEED, TICK_MS,
+  TRAIN_SPEED, DOCKED_TICKS, OFFSCREEN_TICKS,
 };

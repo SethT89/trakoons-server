@@ -143,7 +143,9 @@ describe('tickTrainState', () => {
     const delta = xBefore[0] - assets[0].x;
     assert.ok(delta > 0, 'engine must move left');
     for (let i = 1; i < assets.length; i++) {
-      assert.equal(xBefore[i] - assets[i].x, delta, `asset ${i} must move by same delta as engine`);
+      const moveDelta = xBefore[i] - assets[i].x;
+      // Allow ±0.0001 tolerance due to floating-point arithmetic
+      assert.ok(Math.abs(moveDelta - delta) < 0.0001, `asset ${i} must move by same delta as engine; expected ~${delta}, got ${moveDelta}`);
     }
   });
 
