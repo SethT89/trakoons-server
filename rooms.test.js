@@ -63,21 +63,69 @@ test('nextHost returns null when only one player', () => {
   assert.equal(nextHost(room, hostId), null);
 });
 
-const { generateAssets } = require('./rooms');
+const { generateAssets, assignTeam } = require('./rooms');
 
-test('generateAssets: returns 6 assets for 2 players', () => {
+test('assignTeam: returns 0 when no players have a team', () => {
+  const hostId = uuidv4();
+  const room = makeRoom('ABCD', hostId, 'Alice');
+  assert.equal(assignTeam(room), 0);
+});
+
+test('assignTeam: returns 1 when team 0 has more players', () => {
+  const hostId = uuidv4();
+  const p2Id = uuidv4();
+  const room = makeRoom('ABCD', hostId, 'Alice');
+  room.players.get(hostId).teamId = 0;
+  room.players.set(p2Id, { id: p2Id, name: 'Bob', color: '#fff', teamId: null, ws: null });
+  room.joinOrder.push(p2Id);
+  assert.equal(assignTeam(room), 1);
+});
+
+test('assignTeam: returns 0 when team 1 has more players', () => {
+  const hostId = uuidv4();
+  const p2Id = uuidv4();
+  const room = makeRoom('ABCD', hostId, 'Alice');
+  room.players.get(hostId).teamId = 1;
+  room.players.set(p2Id, { id: p2Id, name: 'Bob', color: '#fff', teamId: null, ws: null });
+  room.joinOrder.push(p2Id);
+  assert.equal(assignTeam(room), 0);
+});
+
+test('assignTeam: returns 0 on a tie', () => {
+  const hostId = uuidv4();
+  const p2Id = uuidv4();
+  const room = makeRoom('ABCD', hostId, 'Alice');
+  room.players.get(hostId).teamId = 0;
+  room.players.set(p2Id, { id: p2Id, name: 'Bob', color: '#fff', teamId: 1, ws: null });
+  room.joinOrder.push(p2Id);
+  assert.equal(assignTeam(room), 0);
+});
+
+test('assignTeam: ignores players with teamId null when counting', () => {
+  const hostId = uuidv4();
+  const p2Id = uuidv4();
+  const p3Id = uuidv4();
+  const room = makeRoom('ABCD', hostId, 'Alice');
+  room.players.get(hostId).teamId = 0;
+  room.players.set(p2Id, { id: p2Id, name: 'Bob', color: '#fff', teamId: null, ws: null });
+  room.players.set(p3Id, { id: p3Id, name: 'Carol', color: '#fff', teamId: null, ws: null });
+  room.joinOrder.push(p2Id, p3Id);
+  assert.equal(assignTeam(room), 1);
+});
+
+test('generateAssets: returns 7 assets for 2 players (6 generated + 1 fixed trough)', () => {
   const assets = generateAssets(2);
-  assert.equal(assets.length, 6);
+  assert.equal(assets.length, 7);
 });
 
-test('generateAssets: returns 12 assets for 4 players', () => {
+test('generateAssets: returns 13 assets for 4 players (12 generated + 1 fixed trough)', () => {
   const assets = generateAssets(4);
-  assert.equal(assets.length, 12);
+  assert.equal(assets.length, 13);
 });
 
-test('generateAssets: caps at 18 for 10 players', () => {
+test('generateAssets: caps at 19 for 10 players (18 generated + 1 fixed trough)', () => {
   const assets = generateAssets(10);
-  assert.equal(assets.length, 18);
+  assert.equal(assets.length, 19);
 });
 
 test('generateAssets: all assets have required fields', () => {

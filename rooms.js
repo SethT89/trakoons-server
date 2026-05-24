@@ -78,6 +78,20 @@ function getPlayers(room) {
   return Array.from(room.players.values()).map(serializePlayer);
 }
 
+/**
+ * Returns the team index (0 or 1) that should receive the next player
+ * to keep teams balanced. Ties go to team 0. Players with teamId === null
+ * are not counted.
+ */
+function assignTeam(room) {
+  let count0 = 0, count1 = 0;
+  for (const p of room.players.values()) {
+    if (p.teamId === 0) count0++;
+    else if (p.teamId === 1) count1++;
+  }
+  return count0 <= count1 ? 0 : 1;
+}
+
 // Returns the id of the player who should become host after `leavingId` departs.
 // Reads from joinOrder (leavingId still present) and room.players (leavingId may be gone).
 // Caller must call nextHost BEFORE deleting the player from room.players if needed.
@@ -154,5 +168,6 @@ module.exports = {
   serializePlayer,
   getPlayers,
   nextHost,
+  assignTeam,
   generateAssets,
 };

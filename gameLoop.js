@@ -13,8 +13,7 @@ const FRENZY_COOLDOWN_MS = 1000;
 const FRENZY_THRESHOLD   = 10;   // seconds remaining when frenzy starts
 const ROUND_DURATION     = 30;   // seconds
 const TICK_MS            = 100;
-const BOT_TARGET_RADIUS  = 15;   // units — how close a bot must be to target an asset
-const BOT_DIR_TICKS      = 20;   // ticks between random direction changes (~2 seconds)
+const BOT_DIR_TICKS      = 20;   // ticks between random direction changes (wander fallback)
 
 // ─── Pure logic ───────────────────────────────────────────────────────────────
 
@@ -152,50 +151,104 @@ function applyPlayerMoves(room) {
   }
 }
 
+/**
+ * Pick the best asset for a bot to chase.
+ * Priority: unowned (+150) > enemy-owned (+75), minus distance. Skips
+ * self-owned and teammate-owned (teams mode). No distance cutoff.
+ */
+function getBotTarget(player, room) {
+  const cx = player.x + RACCOON_SIZE / 2;
+  const cy = player.y + RACCOON_SIZE / 2;
+  let bestTarget = null, bestScore = -Infinity;
+
+  for (const asset of room.assets) {
+    if (asset.type === 'trough') continue;
+    if (asset.ownerId === player.id) continue;
+
+    // In teams mode, skip assets already owned by a teammate
+    if (room.mode === 'teams' && asset.ownerId && player.teamId !== null) {
+      const owner = room.players.get(asset.ownerId);
+      if (owner && owner.teamId === player.teamId) continue;
+    }
+
+    const acx = asset.x + asset.w / 2;
+    const acy = asset.y + asset.h / 2;
+    const dist = Math.sqrt((acx - cx) ** 2 + (acy - cy) ** 2);
+
+    // Unowned is best, enemy-owned is second. Distance subtracts from both.
+    // On a 100×100 map (max dist ~141), a bot will steal if the enemy asset
+    // is 75+ units closer than the nearest unowned asset.
+    const priority = asset.ownerId ? 75 : 150;
+
+    // Cooperative penalty: if a teammate is already closer to this asset,
+    // reduce its score so this bot spreads out to something else instead.
+    let coveredPenalty = 0;
+    if (room.mode === 'teams' && player.teamId !== null) {
+      for (const teammate of room.players.values()) {
+        if (teammate.id === player.id) continue;
+        if (teammate.teamId !== player.teamId) continue;
+        const tcx = teammate.x + RACCOON_SIZE / 2;
+        const tcy = teammate.y + RACCOON_SIZE / 2;
+        const teammateDist = Math.sqrt((acx - tcx) ** 2 + (acy - tcy) ** 2);
+        if (teammateDist < dist) { coveredPenalty = 100; break; }
+      }
+    }
+
+    const score = priority - dist - coveredPenalty;
+
+    if (score > bestScore) { bestScore = score; bestTarget = asset; }
+  }
+
+  return bestTarget;
+}
+
 function moveBots(room) {
   for (const player of room.players.values()) {
     if (!player.isBot) continue;
     player.botDirTimer = (player.botDirTimer || 0) - 1;
 
-    // Find nearest enemy/unowned asset within BOT_TARGET_RADIUS
-    const cx = player.x + RACCOON_SIZE / 2;
-    const cy = player.y + RACCOON_SIZE / 2;
-    let target = null, minDist = BOT_TARGET_RADIUS;
-    for (const asset of room.assets) {
-      if (asset.ownerId === player.id) continue;
-      const acx = asset.x + asset.w / 2;
-      const acy = asset.y + asset.h / 2;
-      const d   = Math.sqrt((acx - cx) ** 2 + (acy - cy) ** 2);
-      if (d < minDist) { minDist = d; target = asset; }
-    }
+    const target = getBotTarget(player, room);
 
     if (target) {
+      const cx   = player.x + RACCOON_SIZE / 2;
+      const cy   = player.y + RACCOON_SIZE / 2;
       const acx  = target.x + target.w / 2;
       const acy  = target.y + target.h / 2;
       const dist = Math.sqrt((acx - cx) ** 2 + (acy - cy) ** 2);
       player.botDx = (acx - cx) / dist;
       player.botDy = (acy - cy) / dist;
-      player.botDirTimer = BOT_DIR_TICKS;
     } else if (player.botDirTimer <= 0) {
+      // No target anywhere — wander randomly
       const angle = Math.random() * Math.PI * 2;
       player.botDx = Math.cos(angle);
       player.botDy = Math.sin(angle);
       player.botDirTimer = BOT_DIR_TICKS;
     }
 
-    const nx  = Math.max(0, Math.min(100 - RACCOON_SIZE, player.x + player.botDx * RACCOON_SPEED));
-    const ny  = Math.max(0, Math.min(100 - RACCOON_SIZE, player.y + player.botDy * RACCOON_SPEED));
-    const box = { x: nx, y: ny, w: RACCOON_SIZE, h: RACCOON_SIZE };
+    // Axis-separated movement — bots slide along obstacle edges instead of freezing
+    const nx = Math.max(0, Math.min(100 - RACCOON_SIZE, player.x + player.botDx * RACCOON_SPEED));
+    const ny = Math.max(0, Math.min(100 - RACCOON_SIZE, player.y + player.botDy * RACCOON_SPEED));
 
-    let blocked = false;
+    let blockedX = false;
     for (const asset of room.assets) {
-      if (!asset.moving && overlaps(box, asset)) {
+      if (!asset.moving && overlaps({ x: nx, y: player.y, w: RACCOON_SIZE, h: RACCOON_SIZE }, asset)) {
         tryTag(asset, player, room.frenzy);
-        blocked = true;
+        blockedX = true;
       }
     }
-    if (!blocked) { player.x = nx; player.y = ny; }
-    else {
+    if (!blockedX) player.x = nx;
+
+    let blockedY = false;
+    for (const asset of room.assets) {
+      if (!asset.moving && overlaps({ x: player.x, y: ny, w: RACCOON_SIZE, h: RACCOON_SIZE }, asset)) {
+        tryTag(asset, player, room.frenzy);
+        blockedY = true;
+      }
+    }
+    if (!blockedY) player.y = ny;
+
+    // Fully stuck — pick a new random direction to escape
+    if (blockedX && blockedY) {
       const angle = Math.random() * Math.PI * 2;
       player.botDx = Math.cos(angle);
       player.botDy = Math.sin(angle);

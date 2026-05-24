@@ -11,6 +11,7 @@ const {
   makeBot,
   getPlayers,
   nextHost,
+  assignTeam,
 } = require('./rooms');
 const { startGameLoop, stopGameLoop } = require('./gameLoop');
 
@@ -91,7 +92,8 @@ function handleJoinRoom(ws, msg) {
 
   const playerId = uuidv4();
   const color = PLAYER_COLORS[room.players.size % PLAYER_COLORS.length];
-  room.players.set(playerId, { id: playerId, name, color, teamId: null, ws });
+  const teamId = room.mode === 'teams' ? assignTeam(room) : null;
+  room.players.set(playerId, { id: playerId, name, color, teamId, ws });
   room.joinOrder.push(playerId);
   clientToRoom.set(ws, code);
   clientToPlayer.set(ws, playerId);
@@ -116,8 +118,15 @@ function handleSetMode(ws, msg) {
   if (!room || room.state !== 'waiting' || room.hostId !== playerId) return;
   if (msg.mode !== 'ffa' && msg.mode !== 'teams') return;
   room.mode = msg.mode;
-  // Reset team assignments on mode change
+  // Reset all team assignments first
   room.players.forEach(p => { p.teamId = null; });
+  // In teams mode, auto-assign everyone in join order to keep balance
+  if (room.mode === 'teams') {
+    for (const id of room.joinOrder) {
+      const p = room.players.get(id);
+      if (p) p.teamId = assignTeam(room);
+    }
+  }
   broadcastToRoom(room, { type: 'modeChanged', mode: room.mode, players: getPlayers(room) });
 }
 
@@ -168,6 +177,7 @@ function handleAddBot(ws) {
     return;
   }
   const bot = makeBot(room);
+  if (room.mode === 'teams') bot.teamId = assignTeam(room);
   room.players.set(bot.id, bot);
   room.joinOrder.push(bot.id);
   broadcastToRoom(room, { type: 'playerJoined', players: getPlayers(room) });
@@ -195,6 +205,7 @@ function handleMove(ws, msg) {
 function handleBackToLobby(ws) {
   const { room } = getRoomAndPlayer(ws);
   if (!room) return;
+  if (room.getReadyTimer) { clearTimeout(room.getReadyTimer); room.getReadyTimer = null; }
   stopGameLoop(room);
   room.state = 'waiting';
 }
@@ -213,19 +224,26 @@ function startCountdown(roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return;
   room.state = 'countdown';
-  broadcastToRoom(room, { type: 'countdown', count: COUNTDOWN_SECONDS });
-  let count = COUNTDOWN_SECONDS;
-  const iv = setInterval(() => {
-    count--;
-    if (count > 0) {
-      broadcastToRoom(room, { type: 'countdown', count });
-    } else {
-      clearInterval(iv);
-      room.state = 'playing';
-      broadcastToRoom(room, { type: 'gameStarted', players: getPlayers(room), mode: room.mode });
-      startGameLoop(room);
-    }
-  }, 1000);
+  broadcastToRoom(room, { type: 'getReady' });
+
+  room.getReadyTimer = setTimeout(() => {
+    room.getReadyTimer = null;
+    const r = rooms.get(roomCode);
+    if (!r || r.state !== 'countdown') return; // aborted (e.g. back to lobby)
+    broadcastToRoom(r, { type: 'countdown', count: COUNTDOWN_SECONDS });
+    let count = COUNTDOWN_SECONDS;
+    const iv = setInterval(() => {
+      count--;
+      if (count > 0) {
+        broadcastToRoom(r, { type: 'countdown', count });
+      } else {
+        clearInterval(iv);
+        r.state = 'playing';
+        broadcastToRoom(r, { type: 'gameStarted', players: getPlayers(r), mode: r.mode });
+        startGameLoop(r);
+      }
+    }, 1000);
+  }, 3000);
 }
 
 function handleDisconnect(ws) {
