@@ -21,11 +21,25 @@ const ASSET_SIZES = {
   'silo':         { w: 4, h: 6 },
   'tool-shed':    { w: 5, h: 5 },
   'light-tower':  { w: 3, h: 6 },
-  'pickup-truck': { w: 6, h: 3 },
+  'pickup-truck': { w: 10, h: 7 },
   'water-hauler': { w: 8, h: 3 },
   'frac-truck':   { w: 8, h: 3 },
   'tumbleweed':   { w: 3, h: 3 },
 };
+
+// Train asset sizes (game units)
+ASSET_SIZES['train-engine'] = { w: 10, h: 6 };
+ASSET_SIZES['train-car']    = { w: 8,  h: 6 };
+
+// Fixed train pieces — always present, positioned top-left on the track.
+// generateAssets spread-copies these so tags don't bleed between games.
+const TRAIN_TEMPLATES = [
+  { id: 'train-engine', type: 'train-engine', x:  2, y: 8, w: 10, h: 6 },
+  { id: 'train-car-1',  type: 'train-car',    x: 13, y: 8, w:  8, h: 6 },
+  { id: 'train-car-2',  type: 'train-car',    x: 22, y: 8, w:  8, h: 6 },
+  { id: 'train-car-3',  type: 'train-car',    x: 31, y: 8, w:  8, h: 6 },
+  { id: 'train-car-4',  type: 'train-car',    x: 40, y: 8, w:  8, h: 6 },
+];
 const STATIC_TYPES  = ['pump-jack', 'water-tank', 'container', 'silo', 'tool-shed', 'light-tower'];
 const MOVING_TYPES  = ['pickup-truck', 'water-hauler', 'frac-truck', 'tumbleweed'];
 const MAP_MARGIN    = 5;   // keep assets 5 units from edges
@@ -112,7 +126,12 @@ function generateAssets(playerCount) {
   const count      = Math.min(Math.max(playerCount * 3, 6), 18);
   const movingCount = Math.max(1, Math.floor(count * 0.25));
   const staticCount = count - movingCount;
-  const placed = [TROUGH]; // trough placed first so nothing spawns on it
+  const trainAssets = TRAIN_TEMPLATES.map(t => ({
+    ...t,
+    ownerId: null, ownerColor: null, cooldownUntil: 0,
+    moving: false, vx: 0, vy: 0,
+  }));
+  const placed = [TROUGH, ...trainAssets]; // trough placed first so nothing spawns on it
 
   function noOverlap(candidate) {
     for (const a of placed) {
@@ -124,21 +143,68 @@ function generateAssets(playerCount) {
     return true;
   }
 
+  // Check that the full swept area of a rectangular route doesn't cross any
+  // static asset already in `placed`. Prevents vehicles getting stuck mid-route.
+  function routeIsClear(route, assetW, assetH) {
+    const rX = route[0].x, rY = route[0].y;
+    const rW = route[1].x - rX;
+    const rH = route[2].y - rY;
+    // Four swept rectangles — the full area the vehicle occupies on each leg
+    const sweeps = [
+      { x: rX,      y: rY,      w: rW + assetW, h: assetH      }, // →
+      { x: rX + rW, y: rY,      w: assetW,      h: rH + assetH }, // ↓
+      { x: rX,      y: rY + rH, w: rW + assetW, h: assetH      }, // ←
+      { x: rX,      y: rY,      w: assetW,      h: rH + assetH }, // ↑
+    ];
+    for (const sw of sweeps) {
+      for (const s of placed) {
+        if (s.moving) continue; // only care about statics
+        if (!(sw.x + sw.w <= s.x || s.x + s.w <= sw.x ||
+              sw.y + sw.h <= s.y || s.y + s.h <= sw.y)) return false;
+      }
+    }
+    return true;
+  }
+
   function placeOne(type, moving) {
     const { w, h } = ASSET_SIZES[type];
     for (let attempt = 0; attempt < 100; attempt++) {
-      const x = MAP_MARGIN + Math.random() * (100 - MAP_MARGIN * 2 - w);
-      const y = MAP_MARGIN + Math.random() * (100 - MAP_MARGIN * 2 - h);
-      if (noOverlap({ x, y, w, h })) {
-        const angle = Math.random() * Math.PI * 2;
-        return {
-          id: Math.random().toString(36).slice(2, 8),
-          type, x, y, w, h,
-          ownerId: null, ownerColor: null, cooldownUntil: 0,
-          moving,
-          vx: moving ? Math.cos(angle) * VEHICLE_SPEED : 0,
-          vy: moving ? Math.sin(angle) * VEHICLE_SPEED : 0,
-        };
+      if (!moving) {
+        const x = MAP_MARGIN + Math.random() * (100 - MAP_MARGIN * 2 - w);
+        const y = MAP_MARGIN + Math.random() * (100 - MAP_MARGIN * 2 - h);
+        if (noOverlap({ x, y, w, h })) {
+          return {
+            id: Math.random().toString(36).slice(2, 8),
+            type, x, y, w, h,
+            ownerId: null, ownerColor: null, cooldownUntil: 0,
+            moving: false, vx: 0, vy: 0,
+          };
+        }
+      } else {
+        // Pick a random center point, generate route dimensions, then clamp to map.
+        // Overlap check uses the actual start position (rX, rY) so each truck
+        // gets a distinct route rather than clustering at the same clamped corner.
+        const rW = 15 + Math.random() * 25;
+        const rH = 15 + Math.random() * 25;
+        const cx = MAP_MARGIN + Math.random() * (100 - MAP_MARGIN * 2);
+        const cy = MAP_MARGIN + Math.random() * (100 - MAP_MARGIN * 2);
+        const rX = Math.max(MAP_MARGIN, Math.min(100 - MAP_MARGIN - w - rW, cx - rW / 2));
+        const rY = Math.max(MAP_MARGIN, Math.min(100 - MAP_MARGIN - h - rH, cy - rH / 2));
+        const route = [
+          { x: rX,      y: rY      },
+          { x: rX + rW, y: rY      },
+          { x: rX + rW, y: rY + rH },
+          { x: rX,      y: rY + rH },
+        ];
+        if (noOverlap({ x: rX, y: rY, w, h }) && routeIsClear(route, w, h)) {
+          return {
+            id: Math.random().toString(36).slice(2, 8),
+            type, x: rX, y: rY, w, h,
+            ownerId: null, ownerColor: null, cooldownUntil: 0,
+            moving: true, vx: VEHICLE_SPEED, vy: 0,
+            route, routeIdx: 1,
+          };
+        }
       }
     }
     return null;
@@ -150,6 +216,11 @@ function generateAssets(playerCount) {
   }
   for (let i = 0; i < movingCount; i++) {
     const a = placeOne(MOVING_TYPES[i % MOVING_TYPES.length], true);
+    if (a) placed.push(a);
+  }
+  // Extra pickup-trucks for sprite/animation testing
+  for (let i = 0; i < 6; i++) {
+    const a = placeOne('pickup-truck', true);
     if (a) placed.push(a);
   }
   return placed;

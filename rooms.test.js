@@ -9,6 +9,7 @@ const {
   makeRoom,
   getPlayers,
   nextHost,
+  generateAssets,
 } = require('./rooms');
 
 test('generateRoomCode returns exactly 4 characters', () => {
@@ -63,7 +64,7 @@ test('nextHost returns null when only one player', () => {
   assert.equal(nextHost(room, hostId), null);
 });
 
-const { generateAssets, assignTeam } = require('./rooms');
+const { assignTeam } = require('./rooms');
 
 test('assignTeam: returns 0 when no players have a team', () => {
   const hostId = uuidv4();
@@ -165,4 +166,24 @@ test('generateAssets: moving assets have non-zero velocity', () => {
   for (const a of moving) {
     assert.ok(Math.abs(a.vx) > 0 || Math.abs(a.vy) > 0, 'moving asset has velocity');
   }
+});
+
+test('generateAssets always includes all 5 train assets with correct ids', () => {
+  const assets = generateAssets(2);
+  const trainIds = ['train-engine', 'train-car-1', 'train-car-2', 'train-car-3', 'train-car-4'];
+  for (const id of trainIds) {
+    const a = assets.find(a => a.id === id);
+    assert.ok(a, `Missing train asset: ${id}`);
+    assert.equal(a.moving, false);
+    assert.equal(a.ownerColor, null);
+  }
+});
+
+test('train-engine is left of train-car-1, which is left of train-car-4', () => {
+  const assets = generateAssets(2);
+  const engine = assets.find(a => a.id === 'train-engine');
+  const car1   = assets.find(a => a.id === 'train-car-1');
+  const car4   = assets.find(a => a.id === 'train-car-4');
+  assert.ok(engine.x < car1.x, 'engine must be left of car-1');
+  assert.ok(car1.x  < car4.x, 'car-1 must be left of car-4');
 });
