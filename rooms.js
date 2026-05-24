@@ -40,8 +40,8 @@ const TRAIN_TEMPLATES = [
   { id: 'train-car-3',  type: 'train-car',    x: 31, y: 8, w:  8, h: 6 },
   { id: 'train-car-4',  type: 'train-car',    x: 40, y: 8, w:  8, h: 6 },
 ];
-const STATIC_TYPES  = ['pump-jack', 'water-tank', 'container', 'silo', 'tool-shed', 'light-tower'];
-const MOVING_TYPES  = ['pickup-truck', 'water-hauler', 'frac-truck', 'tumbleweed'];
+const STATIC_TYPES  = ['container'];
+const MOVING_TYPES  = ['pickup-truck'];
 const MAP_MARGIN    = 5;   // keep assets 5 units from edges
 const ASSET_PADDING = 2;   // min gap between assets
 const VEHICLE_SPEED = 1.675; // units per 100ms tick (67% of raccoon speed)
@@ -216,11 +216,6 @@ function generateAssets(playerCount) {
   }
   for (let i = 0; i < movingCount; i++) {
     const a = placeOne(MOVING_TYPES[i % MOVING_TYPES.length], true);
-    if (a) placed.push(a);
-  }
-  // Extra pickup-trucks for sprite/animation testing
-  for (let i = 0; i < 6; i++) {
-    const a = placeOne('pickup-truck', true);
     if (a) placed.push(a);
   }
   return placed;
