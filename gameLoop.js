@@ -152,6 +152,11 @@ function initGameState(room) {
   room.assets   = generateAssets(room.players.size);
   room.timeLeft = ROUND_DURATION;
   room.frenzy   = false;
+  room.trainState = {
+    phase:    'docked',
+    ticksLeft: DOCKED_TICKS,
+    dockedX:  [2, 13, 22, 31, 40],
+  };
   for (const player of room.players.values()) {
     const spawn = findClearSpawn(room.assets);
     player.x = spawn.x;
@@ -462,6 +467,7 @@ function startGameLoop(room) {
     moveBots(room);
     applyPlayerMoves(room);
     moveVehicles(room);
+    tickTrainState(room.assets, room.trainState);
 
     broadcastAll(room, serializeGameState(room));
 
