@@ -27,18 +27,20 @@ const ASSET_SIZES = {
   'tumbleweed':   { w: 3, h: 3 },
 };
 
-// Train asset sizes (game units)
-ASSET_SIZES['train-engine'] = { w: 10, h: 6 };
-ASSET_SIZES['train-car']    = { w: 8,  h: 6 };
+// Train asset sizes (game units) — widths tuned for 16:9 so pixel box AR ≈ sprite AR
+// Engine sprite AR ≈ 2.0:  h * spriteAR / canvasAR = 6 * 2.0 / 1.778 ≈ 7
+// Car sprite AR   ≈ 1.47: 6 * 1.47 / 1.778 ≈ 5
+ASSET_SIZES['train-engine'] = { w: 7, h: 6 };
+ASSET_SIZES['train-car']    = { w: 5, h: 6 };
 
 // Fixed train pieces — always present, positioned top-left on the track.
 // generateAssets spread-copies these so tags don't bleed between games.
 const TRAIN_TEMPLATES = [
-  { id: 'train-engine', type: 'train-engine', x:  2, y: 8, w: 10, h: 6 },
-  { id: 'train-car-1',  type: 'train-car',    x: 13, y: 8, w:  8, h: 6 },
-  { id: 'train-car-2',  type: 'train-car',    x: 22, y: 8, w:  8, h: 6 },
-  { id: 'train-car-3',  type: 'train-car',    x: 31, y: 8, w:  8, h: 6 },
-  { id: 'train-car-4',  type: 'train-car',    x: 40, y: 8, w:  8, h: 6 },
+  { id: 'train-engine', type: 'train-engine', x:  2, y: 8, w: 7, h: 6 },
+  { id: 'train-car-1',  type: 'train-car',    x:  9, y: 8, w: 5, h: 6 },
+  { id: 'train-car-2',  type: 'train-car',    x: 14, y: 8, w: 5, h: 6 },
+  { id: 'train-car-3',  type: 'train-car',    x: 19, y: 8, w: 5, h: 6 },
+  { id: 'train-car-4',  type: 'train-car',    x: 24, y: 8, w: 5, h: 6 },
 ];
 const STATIC_TYPES  = ['container'];
 const MOVING_TYPES  = ['pickup-truck'];

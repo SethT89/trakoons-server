@@ -116,11 +116,11 @@ describe('buildGameOverPayload', () => {
 const { tickTrainState, getTrainAssets, DOCKED_TICKS, OFFSCREEN_TICKS, TRAIN_SPEED } = require('./gameLoop');
 
 function makeMockTrain() {
-  const dockedX = [2, 13, 22, 31, 40];
+  const dockedX = [2, 9, 14, 19, 24];
   const ids = ['train-engine', 'train-car-1', 'train-car-2', 'train-car-3', 'train-car-4'];
   const assets = ids.map((id, i) => ({
     id, type: id === 'train-engine' ? 'train-engine' : 'train-car',
-    x: dockedX[i], y: 8, w: id === 'train-engine' ? 10 : 8, h: 6,
+    x: dockedX[i], y: 8, w: id === 'train-engine' ? 7 : 5, h: 6,
     ownerId: null, ownerColor: null, cooldownUntil: 0, moving: false, vx: 0, vy: 0,
   }));
   const trainState = { phase: 'docked', ticksLeft: DOCKED_TICKS, dockedX };

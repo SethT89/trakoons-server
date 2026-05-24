@@ -155,7 +155,7 @@ function initGameState(room) {
   room.trainState = {
     phase:    'docked',
     ticksLeft: DOCKED_TICKS,
-    dockedX:  [2, 13, 22, 31, 40],
+    dockedX:  [2, 9, 14, 19, 24],
   };
   for (const player of room.players.values()) {
     const spawn = findClearSpawn(room.assets);
