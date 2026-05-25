@@ -113,17 +113,21 @@ describe('buildGameOverPayload', () => {
   });
 });
 
-const { tickTrainState, getTrainAssets, DOCKED_TICKS, OFFSCREEN_TICKS, TRAIN_SPEED } = require('./gameLoop');
+const {
+  tickTrainState, getTrainAssets, TRAIN_SPEED,
+  DOCKED_TICKS_MIN, DOCKED_TICKS_MAX,
+  OFFSCREEN_TICKS_MIN, OFFSCREEN_TICKS_MAX,
+} = require('./gameLoop');
 
 function makeMockTrain() {
-  const dockedX = [2, 9, 14, 19, 24];
-  const ids = ['train-engine', 'train-car-1', 'train-car-2', 'train-car-3', 'train-car-4'];
+  const dockedX = [2, 9, 14, 19, 24, 29, 34];
+  const ids = ['train-engine', 'train-car-1', 'train-car-2', 'train-car-3', 'train-car-4', 'train-car-5', 'train-car-6'];
   const assets = ids.map((id, i) => ({
     id, type: id === 'train-engine' ? 'train-engine' : 'train-car',
     x: dockedX[i], y: 8, w: id === 'train-engine' ? 7 : 5, h: 6,
     ownerId: null, ownerColor: null, cooldownUntil: 0, moving: false, vx: 0, vy: 0,
   }));
-  const trainState = { phase: 'docked', ticksLeft: DOCKED_TICKS, dockedX };
+  const trainState = { phase: 'docked', ticksLeft: DOCKED_TICKS_MAX, dockedX };
   return { assets, trainState };
 }
 
@@ -149,14 +153,17 @@ describe('tickTrainState', () => {
     }
   });
 
-  test('departing transitions to offscreen when car-4 right edge clears left boundary', () => {
+  test('departing transitions to offscreen when car-6 right edge clears left boundary', () => {
     const { assets, trainState } = makeMockTrain();
     trainState.phase = 'departing';
-    const car4 = assets.find(a => a.id === 'train-car-4');
-    car4.x = -car4.w + 0.5; // right edge at 0.5
+    const car6 = assets.find(a => a.id === 'train-car-6');
+    car6.x = -car6.w + 0.5; // right edge at 0.5
     tickTrainState(assets, trainState);
     assert.equal(trainState.phase, 'offscreen');
-    assert.equal(trainState.ticksLeft, OFFSCREEN_TICKS);
+    assert.ok(
+      trainState.ticksLeft >= OFFSCREEN_TICKS_MIN && trainState.ticksLeft <= OFFSCREEN_TICKS_MAX,
+      `ticksLeft ${trainState.ticksLeft} out of range [${OFFSCREEN_TICKS_MIN}, ${OFFSCREEN_TICKS_MAX}]`,
+    );
     for (const a of getTrainAssets(assets)) {
       assert.ok(a.x + a.w < 0, `${a.id} should be off-screen, got x=${a.x}`);
     }
@@ -188,7 +195,10 @@ describe('tickTrainState', () => {
     }
     tickTrainState(assets, trainState);
     assert.equal(trainState.phase, 'docked');
-    assert.equal(trainState.ticksLeft, DOCKED_TICKS);
+    assert.ok(
+      trainState.ticksLeft >= DOCKED_TICKS_MIN && trainState.ticksLeft <= DOCKED_TICKS_MAX,
+      `ticksLeft ${trainState.ticksLeft} out of range [${DOCKED_TICKS_MIN}, ${DOCKED_TICKS_MAX}]`,
+    );
     assert.equal(assets[0].x, trainState.dockedX[0], 'engine should snap to docked x');
   });
 
@@ -198,7 +208,7 @@ describe('tickTrainState', () => {
     trainState.ticksLeft = 1;
     assets[1].ownerId = 'p1';
     assets[1].ownerColor = '#FF0000';
-    for (let i = 0; i < assets.length; i++) assets[i].x = trainState.dockedX[i] - 60;
+    for (let i = 0; i < assets.length; i++) assets[i].x = trainState.dockedX[i] + (-60);
     tickTrainState(assets, trainState);
     assert.equal(assets[1].ownerId, 'p1');
     assert.equal(assets[1].ownerColor, '#FF0000');

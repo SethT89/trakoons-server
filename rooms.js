@@ -41,6 +41,8 @@ const TRAIN_TEMPLATES = [
   { id: 'train-car-2',  type: 'train-car',    x: 14, y: 8, w: 5, h: 6 },
   { id: 'train-car-3',  type: 'train-car',    x: 19, y: 8, w: 5, h: 6 },
   { id: 'train-car-4',  type: 'train-car',    x: 24, y: 8, w: 5, h: 6 },
+  { id: 'train-car-5',  type: 'train-car',    x: 29, y: 8, w: 5, h: 6 },
+  { id: 'train-car-6',  type: 'train-car',    x: 34, y: 8, w: 5, h: 6 },
 ];
 const STATIC_TYPES  = ['container'];
 const MOVING_TYPES  = ['pickup-truck'];

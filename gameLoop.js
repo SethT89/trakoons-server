@@ -13,11 +13,16 @@ const FRENZY_COOLDOWN_MS = 1000;
 const FRENZY_THRESHOLD   = 10;   // seconds remaining when frenzy starts
 const ROUND_DURATION     = 30;   // seconds
 const TICK_MS            = 100;
-const TRAIN_SPEED      = 1.8;   // units per tick — same as raccoon speed
-const DOCKED_TICKS     = 50;    // 5 seconds at 100ms/tick
-const OFFSCREEN_TICKS  = 50;    // 5 seconds off-screen
-const OFFSCREEN_OFFSET = -60;   // how far left of dockedX to park (units)
-const TRAIN_IDS = ['train-engine', 'train-car-1', 'train-car-2', 'train-car-3', 'train-car-4'];
+const TRAIN_SPEED         = 1.8;  // units per tick — same as raccoon speed
+const DOCKED_TICKS_MIN    = 50;   // 5 s (min on-screen dwell)
+const DOCKED_TICKS_MAX    = 100;  // 10 s (max on-screen dwell)
+const OFFSCREEN_TICKS_MIN = 50;   // 5 s (min off-screen wait)
+const OFFSCREEN_TICKS_MAX = 200;  // 20 s (max off-screen wait)
+const OFFSCREEN_OFFSET    = -60;  // how far left of dockedX to park (units)
+const TRAIN_IDS = ['train-engine', 'train-car-1', 'train-car-2', 'train-car-3', 'train-car-4', 'train-car-5', 'train-car-6'];
+
+function randDockedTicks()    { return DOCKED_TICKS_MIN    + Math.floor(Math.random() * (DOCKED_TICKS_MAX    - DOCKED_TICKS_MIN    + 1)); }
+function randOffscreenTicks() { return OFFSCREEN_TICKS_MIN + Math.floor(Math.random() * (OFFSCREEN_TICKS_MAX - OFFSCREEN_TICKS_MIN + 1)); }
 const BOT_DIR_TICKS      = 20;   // ticks between random direction changes (wander fallback)
 
 // ─── Pure logic ───────────────────────────────────────────────────────────────
@@ -99,7 +104,7 @@ function getTrainAssets(assets) {
  */
 function tickTrainState(assets, trainState) {
   const trains = getTrainAssets(assets);
-  if (trains.length < 5) return;
+  if (trains.length < TRAIN_IDS.length) return;
 
   if (trainState.phase === 'docked') {
     if (--trainState.ticksLeft <= 0) {
@@ -108,14 +113,14 @@ function tickTrainState(assets, trainState) {
 
   } else if (trainState.phase === 'departing') {
     for (const a of trains) a.x -= TRAIN_SPEED;
-    const car4 = trains[4]; // train-car-4 is rightmost
-    if (car4.x + car4.w < 0) {
-      // Fully off-screen — park all assets and start offscreen timer
+    const last = trains[trains.length - 1]; // rightmost car
+    if (last.x + last.w < 0) {
+      // Fully off-screen — park all assets and start randomised offscreen timer
       for (let i = 0; i < trains.length; i++) {
         trains[i].x = trainState.dockedX[i] + OFFSCREEN_OFFSET;
       }
-      trainState.phase    = 'offscreen';
-      trainState.ticksLeft = OFFSCREEN_TICKS;
+      trainState.phase     = 'offscreen';
+      trainState.ticksLeft = randOffscreenTicks();
     }
 
   } else if (trainState.phase === 'offscreen') {
@@ -126,12 +131,12 @@ function tickTrainState(assets, trainState) {
   } else if (trainState.phase === 'arriving') {
     for (const a of trains) a.x += TRAIN_SPEED;
     if (trains[0].x >= trainState.dockedX[0]) {
-      // Snap to docked positions and restart timer
+      // Snap to docked positions and restart randomised docked timer
       for (let i = 0; i < trains.length; i++) {
         trains[i].x = trainState.dockedX[i];
       }
-      trainState.phase    = 'docked';
-      trainState.ticksLeft = DOCKED_TICKS;
+      trainState.phase     = 'docked';
+      trainState.ticksLeft = randDockedTicks();
     }
   }
 }
@@ -152,11 +157,17 @@ function initGameState(room) {
   room.assets   = generateAssets(room.players.size);
   room.timeLeft = ROUND_DURATION;
   room.frenzy   = false;
+  const dockedX = [2, 9, 14, 19, 24, 29, 34];
   room.trainState = {
-    phase:    'docked',
-    ticksLeft: DOCKED_TICKS,
-    dockedX:  [2, 9, 14, 19, 24],
+    phase:    'offscreen',
+    ticksLeft: randOffscreenTicks(),
+    dockedX,
   };
+  // Move trains to their off-screen starting position
+  const startTrains = getTrainAssets(room.assets);
+  for (let i = 0; i < startTrains.length; i++) {
+    startTrains[i].x = dockedX[i] + OFFSCREEN_OFFSET;
+  }
   for (const player of room.players.values()) {
     const spawn = findClearSpawn(room.assets);
     player.x = spawn.x;
@@ -223,6 +234,7 @@ function getBotTarget(player, room) {
 
   for (const asset of room.assets) {
     if (asset.type === 'trough') continue;
+    if (asset.x + asset.w < 0) continue;   // off-screen — don't chase
     if (asset.ownerId === player.id) continue;
 
     // In teams mode, skip assets already owned by a teammate
@@ -491,5 +503,7 @@ module.exports = {
   startGameLoop, stopGameLoop,
   tickTrainState, getTrainAssets,
   RACCOON_SIZE, RACCOON_SPEED, TICK_MS,
-  TRAIN_SPEED, DOCKED_TICKS, OFFSCREEN_TICKS,
+  TRAIN_SPEED,
+  DOCKED_TICKS_MIN, DOCKED_TICKS_MAX,
+  OFFSCREEN_TICKS_MIN, OFFSCREEN_TICKS_MAX,
 };
