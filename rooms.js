@@ -15,8 +15,8 @@ const PLAYER_COLORS = [
 const TEAM_COLORS = { 0: '#FF6B35', 1: '#4CC9F0' };
 
 const ASSET_SIZES = {
-  'container':    { w: 8, h: 4 },
-  'pickup-truck': { w: 10, h: 7 },
+  'container':    { w: 5, h: 4 },
+  'pickup-truck': { w: 5, h: 7 },
 };
 
 // Train asset sizes (game units) — widths tuned for 16:9 so pixel box AR ≈ sprite AR
