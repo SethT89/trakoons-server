@@ -114,9 +114,10 @@ describe('buildGameOverPayload', () => {
 });
 
 const {
-  tickTrainState, getTrainAssets, TRAIN_SPEED,
+  tickTrainState, getTrainAssets, pushPlayersFromTrain, TRAIN_SPEED,
   DOCKED_TICKS_MIN, DOCKED_TICKS_MAX,
   OFFSCREEN_TICKS_MIN, OFFSCREEN_TICKS_MAX,
+  RACCOON_SIZE,
 } = require('./gameLoop');
 
 function makeMockTrain() {
@@ -212,5 +213,36 @@ describe('tickTrainState', () => {
     tickTrainState(assets, trainState);
     assert.equal(assets[1].ownerId, 'p1');
     assert.equal(assets[1].ownerColor, '#FF0000');
+  });
+});
+
+describe('pushPlayersFromTrain', () => {
+  test('player overlapping an on-screen train piece is pushed below it', () => {
+    const { assets, trainState } = makeMockTrain();
+    // Player standing on the tracks at docked position
+    const player = { x: 5, y: 10, pendingX: 5, pendingY: 10 };
+    const room = { assets, trainState, players: new Map([['p1', player]]) };
+    pushPlayersFromTrain(room);
+    // Train engine is at y=8, h=6 → player should be pushed to y=14
+    assert.equal(player.y, 14);
+    assert.equal(player.pendingY, 14);
+  });
+
+  test('player NOT overlapping train is unaffected', () => {
+    const { assets, trainState } = makeMockTrain();
+    const player = { x: 50, y: 50, pendingX: 50, pendingY: 50 };
+    const room = { assets, trainState, players: new Map([['p1', player]]) };
+    pushPlayersFromTrain(room);
+    assert.equal(player.y, 50);
+  });
+
+  test('off-screen train pieces do not push players', () => {
+    const { assets, trainState } = makeMockTrain();
+    // Move all train assets off-screen
+    for (const a of assets) a.x = -70;
+    const player = { x: 5, y: 10, pendingX: 5, pendingY: 10 };
+    const room = { assets, trainState, players: new Map([['p1', player]]) };
+    pushPlayersFromTrain(room);
+    assert.equal(player.y, 10); // untouched
   });
 });

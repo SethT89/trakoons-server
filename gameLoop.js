@@ -329,6 +329,23 @@ function moveBots(room) {
   }
 }
 
+/**
+ * After the train moves (arriving/departing), push any overlapping player
+ * below the train's bottom edge so they don't get stuck inside it.
+ */
+function pushPlayersFromTrain(room) {
+  const trains = getTrainAssets(room.assets);
+  for (const player of room.players.values()) {
+    for (const train of trains) {
+      if (train.x + train.w < 0) continue; // fully off-screen, skip
+      const pBox = { x: player.x, y: player.y, w: RACCOON_SIZE, h: RACCOON_SIZE };
+      if (!overlaps(pBox, train)) continue;
+      player.y = Math.min(100 - RACCOON_SIZE, train.y + train.h);
+      player.pendingY = player.y;
+    }
+  }
+}
+
 /** True if (nx,ny) overlaps a STATIC asset (moving vehicles are ignored to prevent deadlock). */
 function blockedByStatic(asset, nx, ny, room) {
   const box = { x: nx, y: ny, w: asset.w, h: asset.h };
@@ -480,6 +497,7 @@ function startGameLoop(room) {
     applyPlayerMoves(room);
     moveVehicles(room);
     tickTrainState(room.assets, room.trainState);
+    pushPlayersFromTrain(room);
 
     broadcastAll(room, serializeGameState(room));
 
@@ -501,7 +519,7 @@ function stopGameLoop(room) {
 module.exports = {
   overlaps, tryTag, buildGameOverPayload,
   startGameLoop, stopGameLoop,
-  tickTrainState, getTrainAssets,
+  tickTrainState, getTrainAssets, pushPlayersFromTrain,
   RACCOON_SIZE, RACCOON_SPEED, TICK_MS,
   TRAIN_SPEED,
   DOCKED_TICKS_MIN, DOCKED_TICKS_MAX,
