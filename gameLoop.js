@@ -203,7 +203,7 @@ function applyPlayerMoves(room) {
     const tryXBox = { x: desiredX, y: player.y, w: RACCOON_SIZE, h: RACCOON_SIZE };
     let blockedX = false;
     for (const asset of room.assets) {
-      if (!asset.moving && overlaps(tryXBox, asset)) {
+      if (overlaps(tryXBox, asset)) {
         tryTag(asset, player, room.frenzy);
         blockedX = true;
       }
@@ -213,7 +213,7 @@ function applyPlayerMoves(room) {
     const tryYBox = { x: player.x, y: desiredY, w: RACCOON_SIZE, h: RACCOON_SIZE };
     let blockedY = false;
     for (const asset of room.assets) {
-      if (!asset.moving && overlaps(tryYBox, asset)) {
+      if (overlaps(tryYBox, asset)) {
         tryTag(asset, player, room.frenzy);
         blockedY = true;
       }
@@ -303,7 +303,7 @@ function moveBots(room) {
 
     let blockedX = false;
     for (const asset of room.assets) {
-      if (!asset.moving && overlaps({ x: nx, y: player.y, w: RACCOON_SIZE, h: RACCOON_SIZE }, asset)) {
+      if (overlaps({ x: nx, y: player.y, w: RACCOON_SIZE, h: RACCOON_SIZE }, asset)) {
         tryTag(asset, player, room.frenzy);
         blockedX = true;
       }
@@ -312,7 +312,7 @@ function moveBots(room) {
 
     let blockedY = false;
     for (const asset of room.assets) {
-      if (!asset.moving && overlaps({ x: player.x, y: ny, w: RACCOON_SIZE, h: RACCOON_SIZE }, asset)) {
+      if (overlaps({ x: player.x, y: ny, w: RACCOON_SIZE, h: RACCOON_SIZE }, asset)) {
         tryTag(asset, player, room.frenzy);
         blockedY = true;
       }
@@ -342,6 +342,32 @@ function pushPlayersFromTrain(room) {
       if (!overlaps(pBox, train)) continue;
       player.y = Math.min(100 - RACCOON_SIZE, train.y + train.h);
       player.pendingY = player.y;
+    }
+  }
+}
+
+/**
+ * After vehicles move, push any overlapping player out in the vehicle's direction of travel.
+ */
+function pushPlayersFromVehicles(room) {
+  for (const asset of room.assets) {
+    if (!asset.moving) continue;
+    for (const player of room.players.values()) {
+      const pBox = { x: player.x, y: player.y, w: RACCOON_SIZE, h: RACCOON_SIZE };
+      if (!overlaps(pBox, asset)) continue;
+      if (Math.abs(asset.vx) >= Math.abs(asset.vy)) {
+        const newX = asset.vx >= 0
+          ? Math.min(100 - RACCOON_SIZE, asset.x + asset.w)
+          : Math.max(0, asset.x - RACCOON_SIZE);
+        player.x = newX;
+        player.pendingX = newX;
+      } else {
+        const newY = asset.vy >= 0
+          ? Math.min(100 - RACCOON_SIZE, asset.y + asset.h)
+          : Math.max(0, asset.y - RACCOON_SIZE);
+        player.y = newY;
+        player.pendingY = newY;
+      }
     }
   }
 }
@@ -496,6 +522,7 @@ function startGameLoop(room) {
     moveBots(room);
     applyPlayerMoves(room);
     moveVehicles(room);
+    pushPlayersFromVehicles(room);
     tickTrainState(room.assets, room.trainState);
     pushPlayersFromTrain(room);
 
@@ -519,7 +546,7 @@ function stopGameLoop(room) {
 module.exports = {
   overlaps, tryTag, buildGameOverPayload,
   startGameLoop, stopGameLoop,
-  tickTrainState, getTrainAssets, pushPlayersFromTrain,
+  tickTrainState, getTrainAssets, pushPlayersFromTrain, pushPlayersFromVehicles,
   RACCOON_SIZE, RACCOON_SPEED, TICK_MS,
   TRAIN_SPEED,
   DOCKED_TICKS_MIN, DOCKED_TICKS_MAX,
