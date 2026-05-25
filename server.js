@@ -3,12 +3,12 @@ const WebSocket = require('ws');
 const http = require('http');
 const { v4: uuidv4 } = require('uuid');
 const {
-  PLAYER_COLORS,
   MAX_PLAYERS,
   MIN_PLAYERS_TO_START,
   generateRoomCode,
   makeRoom,
   makeBot,
+  nextColor,
   getPlayers,
   nextHost,
   assignTeam,
@@ -91,7 +91,7 @@ function handleJoinRoom(ws, msg) {
   if (room.players.size >= MAX_PLAYERS) { send(ws, { type: 'error', message: 'Room is full' }); return; }
 
   const playerId = uuidv4();
-  const color = PLAYER_COLORS[room.players.size % PLAYER_COLORS.length];
+  const color = nextColor(room);
   const teamId = room.mode === 'teams' ? assignTeam(room) : null;
   room.players.set(playerId, { id: playerId, name, color, teamId, ws });
   room.joinOrder.push(playerId);

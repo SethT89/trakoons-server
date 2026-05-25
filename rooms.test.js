@@ -7,6 +7,7 @@ const {
   PLAYER_COLORS,
   generateRoomCode,
   makeRoom,
+  nextColor,
   getPlayers,
   nextHost,
   generateAssets,
@@ -177,6 +178,22 @@ test('generateAssets always includes all 5 train assets with correct ids', () =>
     assert.equal(a.moving, false);
     assert.equal(a.ownerColor, null);
   }
+});
+
+test('nextColor returns first unused PLAYER_COLORS entry', () => {
+  const room = makeRoom('TEST', 'host-1', 'Host');
+  // Host has PLAYER_COLORS[0]; nextColor should return PLAYER_COLORS[1]
+  assert.equal(nextColor(room), PLAYER_COLORS[1]);
+});
+
+test('nextColor skips colors already in use after a player leaves', () => {
+  const room = makeRoom('TEST', 'host-1', 'Host');
+  // Simulate two more players with colors[1] and colors[2]
+  room.players.set('p2', { id: 'p2', name: 'P2', color: PLAYER_COLORS[1], teamId: null, ws: null });
+  room.players.set('p3', { id: 'p3', name: 'P3', color: PLAYER_COLORS[2], teamId: null, ws: null });
+  // Remove p2 — their color should now be available again
+  room.players.delete('p2');
+  assert.equal(nextColor(room), PLAYER_COLORS[1]);
 });
 
 test('train-engine is left of train-car-1, which is left of train-car-4', () => {
